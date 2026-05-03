@@ -1,0 +1,327 @@
+# =============================================================================
+#  Semantic Agents Demo — docker-compose
+#
+#  Princípios:
+#   - Um container por responsabilidade (segregação clara).
+#   - Redes segregadas: 'edge' (frontend ↔ gateway), 'agents' (gateway ↔ MCP),
+#     'data' (MCP ↔ backends). Backends NÃO falam diretamente com o frontend.
+#   - Healthchecks em todos os serviços.
+#   - Apenas o gateway e o frontend expõem portas para o host.
+#   - Volumes nomeados para persistência.
+#   - Imagens open-source e versões fixadas.
+# =============================================================================
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+networks:
+  edge:
+    name: sad_edge
+  agents:
+    name: sad_agents
+    internal: true
+  data:
+    name: sad_data
+    internal: true
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  postgres_data:
+  qdrant_data:
+
+services:
+
+  # ---------- Backends -----------------------------------------------------
+
+  neo4j:
+    image: neo4j:5.20-community
+    container_name: sad_neo4j
+    <<: [*default-restart, *default-logging]
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-demograph123}
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: 'apoc.*'
+      NEO4J_apoc_export_file_enabled: "true"
+      NEO4J_apoc_import_file_enabled: "true"
+      NEO4J_server_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/import
+      - ./data/seed:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u $${NEO4J_USER:-neo4j} -p $${NEO4J_PASSWORD:-demograph123} 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks: [data]
+    ports:
+      # Expose only in dev for inspection. Comment out for prod.
+      - "${NEO4J_BROWSER_PORT:-7474}:7474"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: sad_postgres
+    <<: [*default-restart, *default-logging]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bank}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bank123}
+      POSTGRES_DB: ${POSTGRES_DB:-bankdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/seed/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-bank} -d $${POSTGRES_DB:-bankdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [data]
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: sad_qdrant
+    <<: [*default-restart, *default-logging]
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/6333 && printf 'GET /readyz HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks: [data]
+
+  seeder:
+    # One-shot job that seeds Neo4j (cypher) e Qdrant (docs vetorizados).
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.seeder
+    container_name: sad_seeder
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-demograph123}
+      QDRANT_URL: http://qdrant:6333
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-bank}:${POSTGRES_PASSWORD:-bank123}@postgres:5432/${POSTGRES_DB:-bankdb}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-3-small}
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      neo4j: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      qdrant: {condition: service_healthy}
+    networks: [data, edge]
+    restart: "no"
+
+  # ---------- MCP Servers --------------------------------------------------
+  # Cada MCP server expõe um único contrato semântico. Não falam entre si.
+  # São chamados pelo gateway via HTTP/SSE (MCP transport).
+
+  mcp-kg:
+    build:
+      context: ./mcp-servers
+      dockerfile: kg-mcp/Dockerfile
+    container_name: sad_mcp_kg
+    <<: [*default-restart, *default-logging]
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-demograph123}
+      MCP_SERVER_NAME: kg
+    depends_on:
+      neo4j: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents, data]
+
+  mcp-ontology:
+    build:
+      context: ./mcp-servers
+      dockerfile: ontology-mcp/Dockerfile
+    container_name: sad_mcp_ontology
+    <<: [*default-restart, *default-logging]
+    environment:
+      ONTOLOGY_PATH: /data/ontology/banking.json
+      MCP_SERVER_NAME: ontology
+    volumes:
+      - ./data:/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents]
+
+  mcp-metrics:
+    build:
+      context: ./mcp-servers
+      dockerfile: metrics-mcp/Dockerfile
+    container_name: sad_mcp_metrics
+    <<: [*default-restart, *default-logging]
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-bank}:${POSTGRES_PASSWORD:-bank123}@postgres:5432/${POSTGRES_DB:-bankdb}
+      MCP_SERVER_NAME: metrics
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents, data]
+
+  mcp-disambiguation:
+    build:
+      context: ./mcp-servers
+      dockerfile: disambiguation-mcp/Dockerfile
+    container_name: sad_mcp_disambiguation
+    <<: [*default-restart, *default-logging]
+    environment:
+      ONTOLOGY_PATH: /data/ontology/banking.json
+      MCP_SERVER_NAME: disambiguation
+    volumes:
+      - ./data:/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents]
+
+  mcp-eval:
+    build:
+      context: ./mcp-servers
+      dockerfile: eval-mcp/Dockerfile
+    container_name: sad_mcp_eval
+    <<: [*default-restart, *default-logging]
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-bank}:${POSTGRES_PASSWORD:-bank123}@postgres:5432/${POSTGRES_DB:-bankdb}
+      GROUND_TRUTH_PATH: /data/ground-truth/scenarios.json
+      MCP_SERVER_NAME: eval
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents, data]
+
+  mcp-rag:
+    build:
+      context: ./mcp-servers
+      dockerfile: rag-mcp/Dockerfile
+    container_name: sad_mcp_rag
+    <<: [*default-restart, *default-logging]
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: banking_docs
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-3-large}
+      MCP_SERVER_NAME: rag
+    depends_on:
+      qdrant: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents, data, edge]
+
+  # ---------- MCP Gateway -----------------------------------------------
+  # Ponto único de descoberta de tools. Agentes configuram apenas este endpoint.
+
+  mcp-gateway:
+    build:
+      context: ./mcp-servers
+      dockerfile: gateway-mcp/Dockerfile
+    container_name: sad_mcp_gateway
+    <<: [*default-restart, *default-logging]
+    environment:
+      MCP_DISAMBIG_URL: http://mcp-disambiguation:8080
+      MCP_ONTOLOGY_URL: http://mcp-ontology:8080
+      MCP_METRICS_URL: http://mcp-metrics:8080
+      MCP_KG_URL: http://mcp-kg:8080
+      MCP_RAG_URL: http://mcp-rag:8080
+      MCP_EVAL_URL: http://mcp-eval:8080
+    depends_on:
+      mcp-kg: {condition: service_healthy}
+      mcp-ontology: {condition: service_healthy}
+      mcp-metrics: {condition: service_healthy}
+      mcp-disambiguation: {condition: service_healthy}
+      mcp-eval: {condition: service_healthy}
+      mcp-rag: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents]
+
+  # ---------- Gateway / Agents ---------------------------------------------
+
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: sad_gateway
+    <<: [*default-restart, *default-logging]
+    environment:
+      # Azure OpenAI (real). Se ausente, usa modo MOCK determinístico.
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-3-large}
+      # Ponto único MCP — o agregador descobre e roteia todas as tools
+      MCP_GATEWAY_URL: http://mcp-gateway:8080
+      QDRANT_URL: http://qdrant:6333
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      mcp-gateway: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks: [edge, agents]
+    ports:
+      - "${GATEWAY_PORT:-8000}:8000"
+
+  # ---------- Frontend -----------------------------------------------------
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8000}
+    container_name: sad_frontend
+    <<: [*default-restart, *default-logging]
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8000}
+    depends_on:
+      gateway: {condition: service_healthy}
+    networks: [edge]
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"

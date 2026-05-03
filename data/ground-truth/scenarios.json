@@ -1,0 +1,165 @@
+{
+  "$schema": "https://semantic-agents-demo/schemas/scenarios.v1.json",
+  "description": "Cenários determinísticos de avaliação. Cada cenário tem ground truth obtido por SQL puro contra o Postgres. O agente naive e o agente semântico recebem a mesma pergunta; o eval-mcp compara cada resposta com a verdade.",
+  "scenarios": [
+    {
+      "id": "S01",
+      "category": "default",
+      "difficulty": "easy",
+      "question": "Quais clientes estão inadimplentes?",
+      "naive_trap": "O agente naive tende a interpretar 'inadimplente' como 'em atraso', incluindo C004 (apenas 30 dias).",
+      "ground_truth": {
+        "type": "set",
+        "expected": ["C002"],
+        "deterministic_query": "SELECT customer_id FROM v_customer_default ORDER BY customer_id",
+        "axioms_applied": ["AX-DEFAULT-90"]
+      }
+    },
+    {
+      "id": "S02",
+      "category": "default",
+      "difficulty": "medium",
+      "question": "Quais clientes estão atrasados mas NÃO inadimplentes?",
+      "naive_trap": "Sem axioma explícito, o naive frequentemente confunde 'atrasado' e 'inadimplente'.",
+      "ground_truth": {
+        "type": "set",
+        "expected": ["C004"],
+        "deterministic_query": "SELECT DISTINCT k.customer_id FROM v_payment_dpd d JOIN credit_contract k ON k.id = d.contract_id WHERE d.paid_date IS NULL AND d.days_past_due > 0 AND d.days_past_due < 90 AND k.customer_id NOT IN (SELECT customer_id FROM v_customer_default) ORDER BY 1",
+        "axioms_applied": ["AX-DEFAULT-90"]
+      }
+    },
+    {
+      "id": "S03",
+      "category": "active",
+      "difficulty": "easy",
+      "question": "Quantos clientes ativos temos?",
+      "naive_trap": "Naive pode contar todos os clientes da base ou usar definição de marketing (login no app).",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 7,
+        "deterministic_query": "SELECT COUNT(*) FROM v_active_customer",
+        "axioms_applied": ["AX-ACTIVE-CUSTOMER"]
+      }
+    },
+    {
+      "id": "S04",
+      "category": "active",
+      "difficulty": "medium",
+      "question": "Liste os clientes que NÃO estão ativos.",
+      "naive_trap": "Sem axioma, naive pode inverter mal a lógica e listar quem nunca foi cliente.",
+      "ground_truth": {
+        "type": "set",
+        "expected": ["C006"],
+        "deterministic_query": "SELECT id FROM customer WHERE id NOT IN (SELECT customer_id FROM v_active_customer) ORDER BY id",
+        "axioms_applied": ["AX-ACTIVE-CUSTOMER"]
+      }
+    },
+    {
+      "id": "S05",
+      "category": "exposure",
+      "difficulty": "medium",
+      "question": "Qual a exposição total do cliente C002?",
+      "naive_trap": "Naive pode somar o principal contratado, ignorando pagamentos já feitos.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 7000.00,
+        "tolerance": 0.01,
+        "deterministic_query": "SELECT COALESCE(SUM(outstanding_principal),0) FROM v_contract_outstanding WHERE customer_id='C002' AND status IN ('ACTIVE','RENEGOTIATED')",
+        "axioms_applied": ["AX-EXPOSURE"]
+      }
+    },
+    {
+      "id": "S06",
+      "category": "portfolio",
+      "difficulty": "hard",
+      "question": "Qual o NPL Ratio da carteira?",
+      "naive_trap": "Naive frequentemente conta operações em vez de exposição, ou inclui WRITTEN_OFF.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 0.001356,
+        "tolerance": 0.0005,
+        "deterministic_query": "SELECT npl_ratio FROM v_npl_ratio",
+        "axioms_applied": ["AX-NPL-RATIO", "AX-DEFAULT-90", "AX-EXPOSURE"]
+      }
+    },
+    {
+      "id": "S07",
+      "category": "disambiguation",
+      "difficulty": "hard",
+      "question": "Qual o spread médio dos contratos vivos?",
+      "naive_trap": "Naive pode escolher convenção errada (sobre funding vs sobre CDI) ou misturar contratos PAID_OFF.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 0.15363,
+        "tolerance": 0.005,
+        "deterministic_query": "SELECT AVG(interest_rate_aa - 0.105) FROM credit_contract WHERE status='ACTIVE'",
+        "axioms_applied": ["Metric:Spread"]
+      }
+    },
+    {
+      "id": "S08",
+      "category": "graph",
+      "difficulty": "hard",
+      "question": "Quais contratos imobiliários são garantidos por imóvel próprio com LTV abaixo de 80%?",
+      "naive_trap": "Sem grafo, naive perde a relação SECURED_BY ou erra a fórmula de LTV.",
+      "ground_truth": {
+        "type": "set",
+        "expected": ["K004"],
+        "deterministic_query": "SELECT k.id FROM credit_contract k JOIN collateral g ON g.contract_id=k.id WHERE k.product='MORTGAGE' AND g.type='REAL_ESTATE' AND (k.principal/g.appraised_value) < 0.8 ORDER BY k.id",
+        "axioms_applied": ["AX-LTV"]
+      }
+    },
+    {
+      "id": "S09",
+      "category": "default",
+      "difficulty": "edge",
+      "question": "O cliente C004 está inadimplente?",
+      "naive_trap": "C004 tem 30 dias de atraso. Naive frequentemente diz 'sim'.",
+      "ground_truth": {
+        "type": "boolean",
+        "expected": false,
+        "deterministic_query": "SELECT EXISTS (SELECT 1 FROM v_customer_default WHERE customer_id='C004')",
+        "axioms_applied": ["AX-DEFAULT-90"]
+      }
+    },
+    {
+      "id": "S10",
+      "category": "portfolio",
+      "difficulty": "medium",
+      "question": "Qual a carteira total ativa?",
+      "naive_trap": "Naive soma 'principal' bruto e ignora amortizações e contratos PAID_OFF.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 5163690.00,
+        "tolerance": 1.0,
+        "deterministic_query": "SELECT SUM(outstanding_principal) FROM v_contract_outstanding WHERE status IN ('ACTIVE','RENEGOTIATED')",
+        "axioms_applied": ["AX-EXPOSURE"]
+      }
+    },
+    {
+      "id": "S11",
+      "category": "disambiguation",
+      "difficulty": "easy",
+      "question": "Quantas contas correntes temos abertas?",
+      "naive_trap": "Pode contar SAVINGS junto, ou ignorar a flag closed_at.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 7,
+        "deterministic_query": "SELECT COUNT(*) FROM account WHERE type='CHECKING' AND closed_at IS NULL"
+      }
+    },
+    {
+      "id": "S12",
+      "category": "active",
+      "difficulty": "edge",
+      "question": "O cliente C006 é considerado ativo? Justifique.",
+      "naive_trap": "Tem cadastro recente (2022) e parece ativo. Mas conta foi fechada e contrato foi WRITTEN_OFF.",
+      "ground_truth": {
+        "type": "boolean",
+        "expected": false,
+        "deterministic_query": "SELECT EXISTS (SELECT 1 FROM v_active_customer WHERE customer_id='C006')",
+        "axioms_applied": ["AX-ACTIVE-CUSTOMER"]
+      }
+    }
+  ]
+}
