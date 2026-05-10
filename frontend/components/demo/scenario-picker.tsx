@@ -28,9 +28,11 @@ function difficultyClass(difficulty: string): string {
 export function ScenarioPicker({
   selected,
   onSelect,
+  filter,
 }: {
   selected: string | null;
   onSelect: (s: Scenario | null) => void;
+  filter?: (s: Scenario) => boolean;
 }) {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [open, setOpen] = useState(false);
@@ -38,7 +40,10 @@ export function ScenarioPicker({
 
   useEffect(() => {
     listScenarios()
-      .then((d) => setScenarios(d.scenarios || []))
+      .then((d) => {
+        const all: Scenario[] = d.scenarios || [];
+        setScenarios(filter ? all.filter(filter) : all);
+      })
       .catch(() => {});
   }, []);
 

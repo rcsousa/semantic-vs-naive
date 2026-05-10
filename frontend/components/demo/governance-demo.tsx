@@ -100,6 +100,7 @@ export function GovernanceDemo({
               setScenario(s);
               if (s) setQuestion(s.question);
             }}
+            filter={(s) => s.category === "governance"}
           />
         </div>
 
