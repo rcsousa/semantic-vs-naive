@@ -92,12 +92,11 @@ const PARTICIPANT_LABEL: Record<string, string> = {
 // Backend participants are "inferred" (not directly visible in events — called by MCPs)
 const BACKEND_PARTICIPANTS = new Set(["postgres", "neo4j", "qdrant_db"]);
 
-// Which MCP service calls which backend
+// Backends mostrados como raias separadas — apenas onde o SQL determinístico
+// é o ponto pedagógico. KG e RAG são conceitualmente o próprio serviço MCP.
 const MCP_BACKEND_MAP: Record<string, string> = {
   metrics: "postgres",
-  eval: "postgres",
-  kg: "neo4j",
-  rag: "qdrant_db",
+  eval:    "postgres",
 };
 
 function participantKey(name: string): ParticipantKey {

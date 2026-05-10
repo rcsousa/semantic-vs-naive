@@ -383,11 +383,11 @@ descreve exatamente por que aceitou ou rejeitou o cálculo.
 resultado verificável). Judge aprova, killswitch passivo, hash gerado.
 `,
     exercise: {
-      title: "Pratique: exposição de crédito — caminho feliz",
-      question: "Qual a exposição total do cliente C005?",
+      title: "Pratique: NPL Ratio com judge ativo — caminho feliz",
+      question: "Qual o NPL Ratio da carteira?",
       scenario_id: "S13",
       expectation_pt:
-        "Judge avalia a resposta contra AX-EXPOSURE aplicado às instâncias de C005. Veredicto: consistent. Killswitch passivo. Observe o painel 'Raciocínio do Judge' — ele exibe a justificativa detalhada e confiança. Anote o hash.",
+        "S13 é o caminho feliz: axioma AX-NPL-RATIO claro, instância única, resultado verificável. Judge retorna consistent. Killswitch passivo. Observe o painel 'Raciocínio do Judge' — ele exibe a justificativa completa e o nível de confiança. Anote o hash para comparar na lição 12.",
     },
   },
 
