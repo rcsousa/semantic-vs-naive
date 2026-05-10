@@ -123,7 +123,7 @@ METRIC_REGISTRY = {
         "sql": (
             "SELECT id AS contract_id, product, "
             "(interest_rate_aa - 0.105)::numeric(8,5) AS spread "
-            "FROM credit_contract WHERE id LIKE 'KV%' ORDER BY id"
+            "FROM credit_contract WHERE id LIKE 'KV%%' ORDER BY id"
         ),
     },
 }
