@@ -93,6 +93,46 @@ def _extract_governance_state(events: list[WorkstripEvent]) -> dict:
     }
 
 
+_NUMERIC_FIELDS = ("spread", "npl_ratio", "exposure", "ltv",
+                   "outstanding_principal", "portfolio",
+                   "active_customers", "checking_accounts")
+
+
+def _build_axiom_for_judge(axiom_id: str | None, axiom_data: dict, instances: list) -> dict:
+    """Constrói o objeto axioma enviado ao judge.
+
+    Axiomas AX-* passam pela ontologia e já chegam com definição/fórmula.
+    Métricas Metric:* não passam pela ontologia — geramos contexto a partir
+    do próprio ID e das instâncias para que o judge possa verificar.
+    """
+    base = dict(axiom_data) if axiom_data else {}
+    if axiom_id and not base.get("id"):
+        base["id"] = axiom_id
+
+    if not axiom_id:
+        return base
+
+    # Métricas determinísticas sem entrada na ontologia
+    if axiom_id.startswith("Metric:") and not base.get("formula"):
+        numeric_field = next(
+            (f for f in _NUMERIC_FIELDS if instances and f in instances[0]),
+            None,
+        )
+        n = len(instances)
+        field_desc = f"'{numeric_field}'" if numeric_field else "valor numérico principal"
+        base["definition"] = (
+            f"{axiom_id}: métrica calculada via SQL determinístico. "
+            f"Cada instância abaixo é um registro real do backend com seu {field_desc} individual."
+        )
+        base["formula"] = (
+            f"Resultado esperado = média aritmética dos {n} valores de {field_desc} "
+            f"nas instâncias retornadas. Verifique se a resposta do agente bate com "
+            f"essa média dentro de tolerância de arredondamento."
+        )
+
+    return base
+
+
 @router.post("/govern")
 async def govern(body: GovernBody):
     async def stream() -> AsyncIterator[str]:
@@ -134,7 +174,9 @@ async def govern(body: GovernBody):
         reg = MCPRegistry({"agg": settings.mcp_gateway_url})
         t1 = time.perf_counter()
         try:
-            axiom_for_judge = state["axiom_data"] or {"id": state["axiom_id"] or "unknown"}
+            axiom_for_judge = _build_axiom_for_judge(
+                state["axiom_id"], state["axiom_data"], state["instances"]
+            )
             jr = await reg.client("agg").call("judge__evaluate", {
                 "question": body.question,
                 "axiom": axiom_for_judge,
