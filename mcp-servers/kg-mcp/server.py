@@ -70,22 +70,55 @@ async def cypher_readonly(cypher: str, params: dict | None = None, limit: int = 
 
 @server.tool(
     name="describe_schema",
-    description="Retorna labels, relationship types e propriedades observadas no KG.",
+    description=(
+        "Retorna o schema do KG: tipos de nó com suas propriedades reais (amostradas), "
+        "contagem e relacionamentos com origem e destino. "
+        "Use isto antes de escrever qualquer Cypher para saber o nome exato das propriedades de cada nó."
+    ),
     input_schema={"type": "object", "properties": {}},
 )
 async def describe_schema():
     with driver.session() as s:
-        labels = s.run("CALL db.labels() YIELD label RETURN collect(label) AS labels").single()["labels"]
-        rels = s.run("CALL db.relationshipTypes() YIELD relationshipType RETURN collect(relationshipType) AS r").single()["r"]
-        props = s.run("CALL db.propertyKeys() YIELD propertyKey RETURN collect(propertyKey) AS p").single()["p"]
-        counts = {}
+        labels = s.run(
+            "CALL db.labels() YIELD label RETURN collect(label) AS labels"
+        ).single()["labels"]
+
+        # Propriedades por tipo de nó (sample de 1 nó real — evita lista plana ambígua)
+        node_types: dict = {}
         for lbl in labels:
             try:
-                c = s.run(f"MATCH (n:`{lbl}`) RETURN count(n) AS c").single()["c"]
-                counts[lbl] = c
+                rec = s.run(
+                    f"MATCH (n:`{lbl}`) RETURN keys(n) AS props LIMIT 1"
+                ).single()
+                props = sorted(rec["props"]) if rec else []
+                count = s.run(
+                    f"MATCH (n:`{lbl}`) RETURN count(n) AS c"
+                ).single()["c"]
+                node_types[lbl] = {"properties": props, "count": count}
             except Exception:
-                counts[lbl] = None
-    return {"labels": labels, "relationships": rels, "properties": props, "counts": counts}
+                node_types[lbl] = {"properties": [], "count": 0}
+
+        # Relacionamentos com origem e destino
+        rel_info: list[dict] = []
+        rels = s.run(
+            "CALL db.relationshipTypes() YIELD relationshipType "
+            "RETURN collect(relationshipType) AS r"
+        ).single()["r"]
+        for rel in rels:
+            try:
+                rec = s.run(
+                    f"MATCH (a)-[r:`{rel}`]->(b) "
+                    f"RETURN labels(a)[0] AS from_label, labels(b)[0] AS to_label LIMIT 1"
+                ).single()
+                entry: dict = {"type": rel}
+                if rec:
+                    entry["from"] = rec["from_label"]
+                    entry["to"] = rec["to_label"]
+                rel_info.append(entry)
+            except Exception:
+                rel_info.append({"type": rel})
+
+    return {"node_types": node_types, "relationships": rel_info}
 
 
 @server.tool(
