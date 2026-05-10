@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Workstrip } from "./workstrip";
 import type { GovernEvent } from "@/lib/api";
-import { CheckCircle2, XCircle, AlertTriangle, ShieldAlert, ShieldCheck, Copy } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, ShieldAlert, ShieldCheck, Copy, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -70,6 +70,9 @@ export function GovernedAgent({
       </CardHeader>
 
       <CardContent className="space-y-3 p-4">
+        {/* ── Painel do Judge ── */}
+        {judgeResult && <JudgePanel result={judgeResult} />}
+
         {/* ── Caixa de escalação ── */}
         {armed && finalEvent?.type === "escalated" && (
           <EscalationBox
@@ -107,6 +110,49 @@ export function GovernedAgent({
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
+
+function JudgePanel({ result }: { result: { verdict: string; reasoning: string; confidence: number } }) {
+  const colors: Record<string, string> = {
+    consistent: "border-emerald-400/60 bg-emerald-50/60 dark:bg-emerald-950/20",
+    inconsistent: "border-red-400/60 bg-red-50/60 dark:bg-red-950/20",
+    insufficient_evidence: "border-amber-400/60 bg-amber-50/60 dark:bg-amber-950/20",
+  };
+  const textColors: Record<string, string> = {
+    consistent: "text-emerald-700 dark:text-emerald-300",
+    inconsistent: "text-red-700 dark:text-red-300",
+    insufficient_evidence: "text-amber-700 dark:text-amber-300",
+  };
+  const conf = Math.round(result.confidence * 100);
+  const border = colors[result.verdict] ?? "border-muted";
+  const textColor = textColors[result.verdict] ?? "text-muted-foreground";
+
+  return (
+    <div className={`rounded-md border p-3 space-y-2 ${border}`}>
+      <div className="flex items-center gap-2">
+        <Scale className={`h-3.5 w-3.5 shrink-0 ${textColor}`} />
+        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Raciocínio do Judge
+        </span>
+        <span className={`ml-auto font-mono text-xs font-semibold ${textColor}`}>
+          {result.verdict} · {conf}% confiança
+        </span>
+      </div>
+      <p className={`text-sm leading-relaxed ${textColor}`}>
+        {result.reasoning || "Sem raciocínio disponível."}
+      </p>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div
+          className={`h-full rounded-full transition-all ${
+            result.verdict === "consistent" ? "bg-emerald-500"
+            : result.verdict === "inconsistent" ? "bg-red-500"
+            : "bg-amber-500"
+          }`}
+          style={{ width: `${conf}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function GovernBadge({
   label,

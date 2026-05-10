@@ -338,11 +338,11 @@ reprodutível.
 o agente vai entregar ou escalar? Por quê?
 `,
     exercise: {
-      title: "Pratique: antecipe o S15",
-      question: "Qual o spread médio na carteira volátil?",
-      scenario_id: "S15",
+      title: "Pratique: governança transparente — S14",
+      question: "Qual o spread médio dos contratos vivos?",
+      scenario_id: "S14",
       expectation_pt:
-        "Antes de rodar: o agente calculará corretamente (judge consistent), mas o killswitch disparará pelo gatilho de variância (std dev ≈ 30 p.p. > 25 p.p. threshold). A resposta será escalada mesmo com o número correto.",
+        "Esta é a mesma pergunta do S07 (Módulo 1), agora com o pipeline governado ativo. Expectativa: badges verdes — judge consistent, killswitch passivo. A governança é transparente quando os dados são consistentes. Compare o hash com a execução seguinte.",
     },
   },
 
@@ -375,15 +375,19 @@ fences markdown, texto extra) com fallback seguro para \`insufficient_evidence\`
 Em modo MOCK (sem chave Azure), o judge retorna \`consistent\` deterministicamente
 — não interfere no fluxo; o killswitch ainda pode disparar pelos outros gatilhos.
 
-**O cenário S13 é o caminho feliz:** pergunta sobre NPL Ratio (métrica que existe,
-axioma claro, instâncias coerentes). Judge aprova, killswitch passivo.
+**Veja o painel "Raciocínio do Judge"** no playground de governança — ele mostra o
+veredicto, a justificativa textual e o índice de confiança. Em modo real, o judge
+descreve exatamente por que aceitou ou rejeitou o cálculo.
+
+**O cenário S13 é o caminho feliz:** NPL Ratio (axioma claro, instância única,
+resultado verificável). Judge aprova, killswitch passivo, hash gerado.
 `,
     exercise: {
-      title: "Pratique: caminho feliz com judge",
-      question: "Qual o NPL Ratio da carteira?",
+      title: "Pratique: exposição de crédito — caminho feliz",
+      question: "Qual a exposição total do cliente C005?",
       scenario_id: "S13",
       expectation_pt:
-        "Judge retorna consistent (cálculo AX-NPL-RATIO verificável). Killswitch passivo. Badges: Calcular ✓ / Julgar consistent / Parar passivo. Hash visível e copiável.",
+        "Judge avalia a resposta contra AX-EXPOSURE aplicado às instâncias de C005. Veredicto: consistent. Killswitch passivo. Observe o painel 'Raciocínio do Judge' — ele exibe a justificativa detalhada e confiança. Anote o hash.",
     },
   },
 
@@ -479,11 +483,11 @@ Mismatch = investigar o que mudou entre as execuções.
 *"O agente que entrega valor em ambiente regulado é o que sabe quando não entregar."*
 `,
     exercise: {
-      title: "Pratique: reprodutibilidade do hash",
-      question: "Qual o NPL Ratio da carteira?",
-      scenario_id: "S13",
+      title: "Pratique: drift detection com hash",
+      question: "Qual o spread médio dos contratos vivos?",
+      scenario_id: "S14",
       expectation_pt:
-        "Execute S13 duas vezes seguidas. Copie o hash das duas execuções e compare. Devem ser idênticos — mesmo cálculo determinístico, mesmo axioma, mesmas instâncias. Isso é o que o auditor verifica.",
+        "Execute S14 duas vezes seguidas — copie o hash das duas execuções e confirme que são idênticos (mesmo Metric:Spread sobre os mesmos dados). Agora anote o hash do S14. Na lição 9 você também executou S14 — o hash deve ser o mesmo. Isso prova drift detection: se mudasse, algo na ontologia ou nos dados teria mudado.",
     },
   },
 ];

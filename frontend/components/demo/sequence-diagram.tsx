@@ -159,6 +159,38 @@ function shortToolName(label: string): string {
   return label;
 }
 
+function richCallLabel(ev: WorkstripEvent): string {
+  const base = shortToolName(ev.label);
+  const args = ev.detail?.args;
+  if (!args) return base;
+  const id = args.id ?? args.axiom_id ?? args.term ?? args.cypher?.slice(0, 20);
+  if (id) return `${base}(${String(id).slice(0, 22)})`;
+  const text = args.text;
+  if (text) return `${base}("${String(text).slice(0, 18)}")`;
+  return base;
+}
+
+function richResultLabel(ev: WorkstripEvent): string {
+  const out = ev.detail?.output;
+  if (!out) return ev.label.slice(0, 30);
+  if (out.count !== undefined) return `${out.count} ${out.count === 1 ? "linha" : "linhas"}`;
+  if (Array.isArray(out.rows)) return `${out.rows.length} ${out.rows.length === 1 ? "linha" : "linhas"}`;
+  if (out.verdict) return `verdict: ${out.verdict}`;
+  if (out.matches !== undefined) return `${out.matches?.length ?? 0} termos`;
+  if (out.resolves_to) return `→ ${out.resolves_to}`;
+  return ev.label.slice(0, 30);
+}
+
+function richBackendCallLabel(parentEv: WorkstripEvent | undefined, to: string): string {
+  if (!parentEv) return "query";
+  const args = parentEv.detail?.args;
+  const id = args?.id ?? args?.axiom_id;
+  if (to === "postgres" && id) return `SQL · ${String(id).slice(0, 18)}`;
+  if (to === "neo4j") return "Cypher";
+  if (to === "qdrant_db") return "vector search";
+  return "query";
+}
+
 function extractParticipants(events: WorkstripEvent[]): string[] {
   const seen = new Set<string>(["agent"]);
   const order: string[] = ["agent"];
@@ -217,21 +249,21 @@ interface ArrowProps {
 
 function HArrow({ x1, x2, y, dashed, color = "#64748b", label, markerId }: ArrowProps) {
   const goingRight = x2 > x1;
-  const arrowX = goingRight ? x2 : x1;
-  const labelX = Math.min(x1, x2) + Math.abs(x2 - x1) / 2;
+  const labelX = (x1 + x2) / 2;
+  // For left-going (return) arrows, use the left-pointing marker at markerEnd (x2)
+  const markerEndId = goingRight ? markerId : markerId.replace("arrow-", "arrow-left-");
 
   return (
     <g>
       <line
         x1={x1}
         y1={y}
-        x2={goingRight ? x2 - 2 : x2 + 2}
+        x2={x2}
         y2={y}
         stroke={color}
         strokeWidth={1.5}
         strokeDasharray={dashed ? "5,3" : undefined}
-        markerEnd={goingRight ? `url(#${markerId})` : undefined}
-        markerStart={!goingRight ? `url(#${markerId}-start)` : undefined}
+        markerEnd={`url(#${markerEndId})`}
       />
       {label && (
         <text
@@ -441,19 +473,19 @@ export function SequenceDiagram({
         lastToolCallByLabel.set(ev.label, ev);
         items.push({ kind: "event", ev });
         items.push({ kind: "inferred", from: "agg", to: svc, direction: "call",
-                     label: shortToolName(ev.label), parentEv: ev });
+                     label: richCallLabel(ev), parentEv: ev });
         const backend = MCP_BACKEND_MAP[svc];
         if (backend && participants.includes(backend)) {
           items.push({ kind: "inferred", from: svc, to: backend, direction: "call",
-                       label: "query", parentEv: ev });
+                       label: richBackendCallLabel(ev, backend), parentEv: ev });
           items.push({ kind: "inferred", from: backend, to: svc, direction: "return",
-                       label: "rows", parentEv: ev });
+                       label: "rows ↩", parentEv: ev });
         }
       } else if (ev.type === "tool_result" && hasAgg) {
         const svc = serviceFromToolResult(ev.detail);
         if (svc && svc !== "agg" && participants.includes(svc)) {
           items.push({ kind: "inferred", from: svc, to: "agg", direction: "return",
-                       label: "ok", parentEv: ev });
+                       label: richResultLabel(ev), parentEv: ev });
         }
         items.push({ kind: "event", ev });
       } else {
@@ -463,9 +495,9 @@ export function SequenceDiagram({
           const backend = MCP_BACKEND_MAP[svc];
           if (backend && participants.includes(backend)) {
             items.push({ kind: "inferred", from: svc, to: backend, direction: "call",
-                         label: "query", parentEv: ev });
+                         label: richBackendCallLabel(ev, backend), parentEv: ev });
             items.push({ kind: "inferred", from: backend, to: svc, direction: "return",
-                         label: "rows", parentEv: ev });
+                         label: "rows ↩", parentEv: ev });
           }
         }
       }
@@ -523,48 +555,21 @@ export function SequenceDiagram({
       >
         {/* ── defs: arrowheads ── */}
         <defs>
-          {/* solid right-pointing arrowhead */}
-          <marker
-            id="arrow-solid"
-            markerWidth={8}
-            markerHeight={8}
-            refX={6}
-            refY={3}
-            orient="auto"
-          >
+          {/* solid right-pointing (calls) */}
+          <marker id="arrow-solid" markerWidth={8} markerHeight={6} refX={7} refY={3} orient="auto">
             <path d="M0,0 L0,6 L8,3 z" fill="#64748b" />
           </marker>
-          {/* dashed right-pointing arrowhead (same shape, lighter) */}
-          <marker
-            id="arrow-dashed"
-            markerWidth={8}
-            markerHeight={8}
-            refX={6}
-            refY={3}
-            orient="auto"
-          >
+          {/* dashed right-pointing (calls, lighter) */}
+          <marker id="arrow-dashed" markerWidth={8} markerHeight={6} refX={7} refY={3} orient="auto">
             <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
           </marker>
-          {/* solid left-pointing (for return arrows using markerStart) */}
-          <marker
-            id="arrow-solid-start"
-            markerWidth={8}
-            markerHeight={8}
-            refX={2}
-            refY={3}
-            orient="auto-start-reverse"
-          >
-            <path d="M0,0 L0,6 L8,3 z" fill="#64748b" />
+          {/* solid left-pointing (returns) — fixed orient, tip at x=8 */}
+          <marker id="arrow-left-solid" markerWidth={8} markerHeight={6} refX={1} refY={3} orient="auto">
+            <path d="M8,0 L8,6 L0,3 z" fill="#64748b" />
           </marker>
-          <marker
-            id="arrow-dashed-start"
-            markerWidth={8}
-            markerHeight={8}
-            refX={2}
-            refY={3}
-            orient="auto-start-reverse"
-          >
-            <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
+          {/* dashed left-pointing (returns, lighter) */}
+          <marker id="arrow-left-dashed" markerWidth={8} markerHeight={6} refX={1} refY={3} orient="auto">
+            <path d="M8,0 L8,6 L0,3 z" fill="#94a3b8" />
           </marker>
         </defs>
 
@@ -716,7 +721,7 @@ export function SequenceDiagram({
               );
             }
             const svcX = colX(svcIdx);
-            const short = shortToolName(ev.label);
+            const callLabel = richCallLabel(ev);
             const color = participantColor(targetName);
 
             return (
@@ -730,7 +735,6 @@ export function SequenceDiagram({
                   strokeWidth={2}
                   markerEnd="url(#arrow-solid)"
                 />
-                {/* custom arrowhead inline to match color */}
                 <text
                   x={(agentColX + svcX) / 2}
                   y={centerY - 5}
@@ -739,7 +743,7 @@ export function SequenceDiagram({
                   fill={color}
                   fontFamily="ui-monospace, monospace"
                 >
-                  {short.length > 28 ? short.slice(0, 28) + "…" : short}
+                  {callLabel.length > 30 ? callLabel.slice(0, 30) + "…" : callLabel}
                 </text>
                 <RowOverlay x={0} y={y} width={svgWidth} ev={ev} />
               </g>
@@ -760,8 +764,7 @@ export function SequenceDiagram({
             }
             const svcX = colX(svcIdx);
             const color = participantColor(sourceName!);
-            const truncLabel =
-              ev.label.length > 30 ? ev.label.slice(0, 30) + "…" : ev.label;
+            const retLabel = richResultLabel(ev);
 
             return (
               <g key={ev.id + rowIndex}>
@@ -773,7 +776,7 @@ export function SequenceDiagram({
                   stroke={color}
                   strokeWidth={1.5}
                   strokeDasharray="5,3"
-                  markerEnd="url(#arrow-dashed)"
+                  markerEnd="url(#arrow-left-dashed)"
                 />
                 <text
                   x={(agentColX + svcX) / 2}
@@ -784,7 +787,7 @@ export function SequenceDiagram({
                   opacity={0.8}
                   fontFamily="ui-monospace, monospace"
                 >
-                  {truncLabel}
+                  {retLabel.length > 30 ? retLabel.slice(0, 30) + "…" : retLabel}
                 </text>
                 <RowOverlay x={0} y={y} width={svgWidth} ev={ev} />
               </g>
