@@ -1,8 +1,11 @@
 """
 Seeder one-shot:
-  - Carrega o cypher seed no Neo4j (idempotente).
-  - Cria a coleção Qdrant 'banking_docs' e indexa o glossário com embeddings.
-  - Postgres já é seedado pelo /docker-entrypoint-initdb.d.
+  - Postgres base: seedado automaticamente via /docker-entrypoint-initdb.d
+    (01_schema.sql + 02_seed.sql) na primeira inicialização.
+  - Postgres KV: seed do Módulo 2 (03_seed_kv.sql) executado sempre aqui,
+    idempotente via ON CONFLICT DO NOTHING.
+  - Neo4j: carrega cypher seed (idempotente por MERGE).
+  - Qdrant: recria coleção banking_docs com embeddings Azure OpenAI.
 """
 from __future__ import annotations
 
@@ -20,9 +23,32 @@ NEO4J_URI = os.environ["NEO4J_URI"]
 NEO4J_USER = os.environ["NEO4J_USER"]
 NEO4J_PASSWORD = os.environ["NEO4J_PASSWORD"]
 QDRANT_URL = os.environ["QDRANT_URL"]
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")
 
 CYPHER_PATH = Path("/data/seed/neo4j_seed.cypher")
+KV_SQL_PATH = Path("/data/seed/postgres/03_seed_kv.sql")
 DOCS_DIR = Path("/data/docs")
+
+
+def seed_postgres_kv():
+    """Aplica o seed da carteira volátil (KV) — idempotente."""
+    if not POSTGRES_DSN:
+        print("[seeder] POSTGRES_DSN não configurado — pulando KV seed.")
+        return
+    if not KV_SQL_PATH.exists():
+        print(f"[seeder] {KV_SQL_PATH} não encontrado — pulando KV seed.")
+        return
+
+    import psycopg
+    sql = KV_SQL_PATH.read_text(encoding="utf-8")
+    statements = [s.strip() for s in sql.split(";") if s.strip() and not s.strip().startswith("--")]
+    print(f"[seeder] Aplicando KV seed ({len(statements)} statements)…")
+    with psycopg.connect(POSTGRES_DSN) as conn:
+        with conn.cursor() as cur:
+            for stmt in statements:
+                cur.execute(stmt)
+        conn.commit()
+    print("[seeder] KV seed ok — C009 + KV001-KV006 inseridos (ou já existiam).")
 
 
 def seed_neo4j():
@@ -44,7 +70,6 @@ def seed_qdrant():
     docs = []
     for p in DOCS_DIR.glob("*.md"):
         text = p.read_text(encoding="utf-8")
-        # chunking simples por parágrafo
         chunks = [c.strip() for c in text.split("\n\n") if c.strip()]
         docs.extend((str(p.name), c) for c in chunks)
     print(f"  {len(docs)} chunks")
@@ -87,6 +112,10 @@ def seed_qdrant():
 
 
 if __name__ == "__main__":
+    try:
+        seed_postgres_kv()
+    except Exception as e:  # noqa: BLE001
+        print(f"[seeder] KV seed FAILED: {e}", file=sys.stderr)
     try:
         seed_neo4j()
     except Exception as e:  # noqa: BLE001
