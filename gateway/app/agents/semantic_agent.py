@@ -46,8 +46,12 @@ def _registry() -> MCPRegistry:
 
 # ---- Tool catalog para o LLM (formato OpenAI tools) -----------------------
 
+_AGENT_TOOL_EXCLUDE = frozenset({"judge__evaluate"})
+
 async def _tools_catalog(reg: MCPRegistry) -> list[dict]:
-    # O agregador já retorna tools prefixadas (metrics__compute, etc.)
+    # O agregador retorna tools prefixadas (metrics__compute, etc.)
+    # Excluímos judge__evaluate: é chamado pela rota de governança, não pelo agente.
+    # Expor ao LLM causaria auto-chamadas inesperadas que confundem o pipeline.
     tools = await reg.client("agg").list_tools()
     return [
         {
@@ -59,7 +63,7 @@ async def _tools_catalog(reg: MCPRegistry) -> list[dict]:
             },
         }
         for t in tools
-        if "_error" not in t
+        if "_error" not in t and t["name"] not in _AGENT_TOOL_EXCLUDE
     ]
 
 

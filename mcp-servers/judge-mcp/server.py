@@ -86,7 +86,6 @@ def _llm_judge(question: str, axiom: dict, instances: list, agent_response: str)
             {"role": "user", "content": user_msg},
         ],
         temperature=0.0,
-        max_tokens=300,
     )
     raw = resp.choices[0].message.content or ""
     return _parse_judge_output(raw)
