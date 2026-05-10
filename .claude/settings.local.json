@@ -6,7 +6,15 @@
       "Bash(timeout 60 bash -c 'until [ \"$\\(docker inspect sad_qdrant --format \"{{.State.Health.Status}}\"\\)\" != \"starting\" ]; do sleep 3; done && docker inspect sad_qdrant --format \"{{.State.Health.Status}}\"')",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\ricar\\\\OneDrive\\\\demo-graph\" -Directory)",
       "Bash(Select-Object Name)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(git checkout *)",
+      "Bash(python -m pytest tests/governance/ -v)",
+      "Bash(pip install *)",
+      "Bash(python -m pytest gateway/tests/governance/ -v --tb=short)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --title 'feat: governance module — judge + killswitch + trail \\(4 lessons + 3 scenarios\\)' --body ' *)"
     ]
   }
 }

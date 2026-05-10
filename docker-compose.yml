@@ -290,7 +290,7 @@ services:
       mcp-disambiguation: {condition: service_healthy}
       mcp-eval: {condition: service_healthy}
       mcp-rag: {condition: service_healthy}
-      mcp-judge: {condition: service_healthy}
+      mcp-judge: {condition: service_started}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 15s
