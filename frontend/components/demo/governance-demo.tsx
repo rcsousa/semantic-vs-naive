@@ -8,7 +8,13 @@ import { GovernedAgent } from "./governed-agent";
 import { ScenarioPicker, type Scenario } from "./scenario-picker";
 import { Play, Loader2 } from "lucide-react";
 
-type JudgeResult = { verdict: string; reasoning: string; confidence: number };
+type JudgeResult = {
+  verdict: string;
+  reasoning: string;
+  confidence: number;
+  axiom_id?: string;
+  instance_count?: number;
+};
 type Trigger = { code: string; threshold: number; observed: number; detail: string };
 type KillswitchResult = { armed: boolean; triggers: Trigger[]; ragas_score?: number };
 
@@ -63,6 +69,8 @@ export function GovernanceDemo({
             verdict: ev.detail.verdict,
             reasoning: ev.detail.reasoning,
             confidence: ev.detail.confidence,
+            axiom_id: ev.detail.axiom_id,
+            instance_count: ev.detail.instance_count,
           });
           continue;
         }

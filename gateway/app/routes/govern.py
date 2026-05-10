@@ -161,6 +161,8 @@ async def govern(body: GovernBody):
             "verdict": judge_result["verdict"],
             "reasoning": judge_result.get("reasoning", ""),
             "confidence": judge_result.get("confidence", 0.0),
+            "axiom_id": state["axiom_id"],
+            "instance_count": len(state["instances"]),
         })
 
         # ── 3. Killswitch ────────────────────────────────────────────────────

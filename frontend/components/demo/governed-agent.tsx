@@ -111,7 +111,9 @@ export function GovernedAgent({
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function JudgePanel({ result }: { result: { verdict: string; reasoning: string; confidence: number } }) {
+function JudgePanel({ result }: {
+  result: { verdict: string; reasoning: string; confidence: number; axiom_id?: string; instance_count?: number }
+}) {
   const colors: Record<string, string> = {
     consistent: "border-emerald-400/60 bg-emerald-50/60 dark:bg-emerald-950/20",
     inconsistent: "border-red-400/60 bg-red-50/60 dark:bg-red-950/20",
@@ -122,33 +124,67 @@ function JudgePanel({ result }: { result: { verdict: string; reasoning: string; 
     inconsistent: "text-red-700 dark:text-red-300",
     insufficient_evidence: "text-amber-700 dark:text-amber-300",
   };
+  const verdictLabel: Record<string, string> = {
+    consistent: "consistent ✓",
+    inconsistent: "inconsistent ✗",
+    insufficient_evidence: "insufficient_evidence ?",
+  };
   const conf = Math.round(result.confidence * 100);
   const border = colors[result.verdict] ?? "border-muted";
   const textColor = textColors[result.verdict] ?? "text-muted-foreground";
 
   return (
     <div className={`rounded-md border p-3 space-y-2 ${border}`}>
+      {/* Header */}
       <div className="flex items-center gap-2">
         <Scale className={`h-3.5 w-3.5 shrink-0 ${textColor}`} />
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Raciocínio do Judge
         </span>
-        <span className={`ml-auto font-mono text-xs font-semibold ${textColor}`}>
-          {result.verdict} · {conf}% confiança
+        <span className={`ml-auto font-mono text-xs font-bold ${textColor}`}>
+          {verdictLabel[result.verdict] ?? result.verdict}
         </span>
       </div>
+
+      {/* Contexto da avaliação */}
+      {(result.axiom_id || result.instance_count !== undefined) && (
+        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground border-b border-current/10 pb-2">
+          {result.axiom_id && (
+            <span>
+              <span className="font-medium">Axioma avaliado:</span>{" "}
+              <code className="font-mono bg-muted px-1 rounded">{result.axiom_id}</code>
+            </span>
+          )}
+          {result.instance_count !== undefined && (
+            <span>
+              <span className="font-medium">Instâncias examinadas:</span>{" "}
+              <strong>{result.instance_count}</strong>
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Raciocínio */}
       <p className={`text-sm leading-relaxed ${textColor}`}>
         {result.reasoning || "Sem raciocínio disponível."}
       </p>
-      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-        <div
-          className={`h-full rounded-full transition-all ${
-            result.verdict === "consistent" ? "bg-emerald-500"
-            : result.verdict === "inconsistent" ? "bg-red-500"
-            : "bg-amber-500"
-          }`}
-          style={{ width: `${conf}%` }}
-        />
+
+      {/* Barra de confiança */}
+      <div className="space-y-0.5">
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>confiança</span>
+          <span className="font-mono">{conf}%</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className={`h-full rounded-full transition-all ${
+              result.verdict === "consistent" ? "bg-emerald-500"
+              : result.verdict === "inconsistent" ? "bg-red-500"
+              : "bg-amber-500"
+            }`}
+            style={{ width: `${conf}%` }}
+          />
+        </div>
       </div>
     </div>
   );

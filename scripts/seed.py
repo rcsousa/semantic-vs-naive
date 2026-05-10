@@ -30,6 +30,12 @@ KV_SQL_PATH = Path("/data/seed/postgres/03_seed_kv.sql")
 DOCS_DIR = Path("/data/docs")
 
 
+def _strip_sql_comments(stmt: str) -> str:
+    """Remove linhas que são só comentário (--) do início/meio do statement."""
+    lines = [ln for ln in stmt.split("\n") if not ln.strip().startswith("--")]
+    return "\n".join(lines).strip()
+
+
 def seed_postgres_kv():
     """Aplica o seed da carteira volátil (KV) — idempotente."""
     if not POSTGRES_DSN:
@@ -41,7 +47,12 @@ def seed_postgres_kv():
 
     import psycopg
     sql = KV_SQL_PATH.read_text(encoding="utf-8")
-    statements = [s.strip() for s in sql.split(";") if s.strip() and not s.strip().startswith("--")]
+    # split por ; e strip de comentários — garante que blocos que começam
+    # com comentário não sejam descartados
+    statements = [
+        clean for raw in sql.split(";")
+        if (clean := _strip_sql_comments(raw))
+    ]
     print(f"[seeder] Aplicando KV seed ({len(statements)} statements)…")
     with psycopg.connect(POSTGRES_DSN) as conn:
         with conn.cursor() as cur:
