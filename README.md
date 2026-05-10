@@ -31,8 +31,8 @@ tool-calling real do LLM e variabilidade nas respostas.
 
 | Camada | Tecnologia | Papel |
 | --- | --- | --- |
-| Frontend | Next.js 14 + shadcn/ui + Tailwind | UI lado a lado, sequence diagram, curso (10 lições) |
-| Gateway | FastAPI + openai SDK | Orquestra os 2 agentes em paralelo, expõe SSE |
+| Frontend | Next.js 14 + shadcn/ui + Tailwind | UI lado a lado, sequence diagram, curso (12 lições), página de Governança |
+| Gateway | FastAPI + openai SDK | Orquestra os 2 agentes em paralelo, expõe SSE; rota `/api/govern` |
 | MCP Gateway | FastAPI | Agrega tools de todos os MCPs; agentes configuram 1 URL |
 | mcp-disambig | FastAPI | Resolve termos ambíguos contra a ontologia |
 | mcp-ontology | FastAPI | Serve axiomas, classes, relações do banking.json |
@@ -40,10 +40,21 @@ tool-calling real do LLM e variabilidade nas respostas.
 | mcp-kg | FastAPI + Neo4j | Cypher read-only — traversals de grafo |
 | mcp-rag | FastAPI + Qdrant + Azure OAI | Busca vetorial para o agente naive |
 | mcp-eval | FastAPI + Postgres | RAGAS-style scoring vs ground truth |
+| **mcp-judge** | **FastAPI + Azure OAI** | **LLM-as-judge ancorado em ontologia** |
 | KG | Neo4j 5.20 + APOC | Grafo de cliente/contrato/garantia |
-| Determinístico | Postgres 16 + views | AX-DEFAULT-90, AX-NPL-RATIO, AX-EXPOSURE, etc. |
+| Determinístico | Postgres 16 + views | AX-DEFAULT-90, AX-NPL-RATIO, AX-EXPOSURE, Metric:SpreadVolatil |
 | Vetorial (naive) | Qdrant 1.9.2 | RAG ingênuo sobre glossário + relatório interno |
-| LLM | Azure OpenAI (gpt-5.2 default) | Tool-calling no agente semântico |
+| LLM | Azure OpenAI (gpt-5.2 default) | Tool-calling no agente semântico e no judge |
+
+### Módulo 2 — Governança em Runtime
+
+Tese: em ambiente regulado, o agente precisa de três coisas: **calcular**, **julgar** e **parar**.
+A auditabilidade é o subproduto quando as três funcionam juntas.
+
+- **`/governance`** — nova página com pipeline governado (um único agente semântico)
+- **Killswitch** com 3 gatilhos em OR: RAGAS < 0.70 · judge ≠ consistent · variância > 25 p.p.
+- **AuditTrail** com hash SHA-256 reprodutível (exclui timestamps/durations)
+- **Cenários S13–S15** (categoria `governance`): caminho feliz, recap S07, jewel (variância)
 
 ## Arquitetura
 

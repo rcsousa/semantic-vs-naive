@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import compare, inspect
+from app.routes import compare, inspect, govern
 from app.settings import settings
 
 app = FastAPI(title="Semantic Agents Demo — Gateway", version="1.0.0")
@@ -18,6 +18,7 @@ app.add_middleware(
 
 app.include_router(compare.router)
 app.include_router(inspect.router)
+app.include_router(govern.router)
 
 
 @app.get("/health")

@@ -303,75 +303,187 @@ O agente naive pode ser *coerente* (escreve bem), mas erra em *correto* e
     },
   },
 
+  // ── Módulo 2: Governança em Runtime ─────────────────────────────────────────
+
   {
     id: 9,
-    slug: "hands-on",
-    title: "9 · Hands-on: quebre a semântica",
-    subtitle: "A melhor forma de entender é destruir e reconstruir.",
+    slug: "calcular-nao-basta",
+    title: "9 · Calcular não basta",
+    subtitle: "Velocidade vira passivo sem freio em ambiente regulado.",
     body: `
-Três experimentos para provar a si mesmo que a camada semântica importa:
+**A tese do módulo.** Até aqui vimos como calcular corretamente via ontologia,
+axiomas e métricas determinísticas. Isso resolve o problema da *exatidão*.
+Mas em ambiente regulado há três competências distintas que um agente de
+produção precisa:
 
-1. **Remova o axioma.** Em \`data/ontology/banking.json\`, delete a entrada
-   \`"atrasado"\` dos sinônimos. Reinicie \`mcp-gateway\` e \`mcp-disambiguation\`.
-   Execute S09. O semântico vai degradar — sem o mapeamento do termo, ele
-   não sabe qual axioma aplicar.
+1. **Calcular** — o número correto, com rastreabilidade ao axioma.
+2. **Julgar** — verificar se a própria resposta é consistente com o que foi computado.
+3. **Parar** — saber quando não entregar, escalando para revisão humana.
 
-2. **Mude o threshold.** Troque \`AX-DEFAULT-90\` de 90 para 30 dias.
-   Reinicie \`mcp-metrics\` e \`mcp-ontology\`. Execute S01 e S09.
-   Observe como os resultados mudam *sem tocar no código dos agentes* —
-   só a ontologia mudou.
+A *auditabilidade* não é um requisito adicional. É o subproduto natural quando
+as três funcionam juntas: cada decisão tem inputs, outputs, timestamp e hash
+reprodutível.
 
-3. **Quebre o ground truth.** Edite \`data/seed/postgres/02_seed.sql\` e
-   altere o saldo de C002. Execute \`docker compose run --rm seeder\`.
-   Execute S05. Os dois agentes vão ter resultados diferentes do que
-   tinham antes — o naive usa dado desatualizado do índice vetorial,
-   o semântico usa o banco sempre fresco.
+**Por que "calcular não basta"?** Considere o cenário onde o agente calcula
+corretamente a média de spread de uma carteira, mas os contratos individuais
+têm dispersão enorme — alguns a 1 p.p., outros a 80 p.p. O número médio está
+certo. A decisão de entregá-lo sem contexto pode estar errada.
 
-Esses experimentos mostram que o valor da camada semântica não está
-no código do agente — está na ontologia, nos axiomas e nas queries canônicas.
-Mudar uma regra de negócio = mudar a ontologia, não redeployar o agente.
+**Onde isso está nesta demo.** Veja \`gateway/app/routes/govern.py\` — a rota
+\`/api/govern\` implementa o pipeline completo: calculate → judge → killswitch →
+respond/escalate. Cada step é registrado no \`AuditTrail\` com hash SHA-256
+reprodutível.
+
+**Exercício de antecipação.** Antes de rodar S15, escreva sua expectativa:
+o agente vai entregar ou escalar? Por quê?
 `,
     exercise: {
-      title: "Pratique: NPL com threshold diferente",
-      question: "Quais clientes estão inadimplentes?",
-      scenario_id: "S01",
+      title: "Pratique: antecipe o S15",
+      question: "Qual o spread médio na carteira volátil?",
+      scenario_id: "S15",
       expectation_pt:
-        "Com AX-DEFAULT-90 original: apenas C002 e C006. Se você mudou para 30 dias: C002, C004 e C006. O agente semântico reflete a mudança automaticamente. O naive não.",
+        "Antes de rodar: o agente calculará corretamente (judge consistent), mas o killswitch disparará pelo gatilho de variância (std dev ≈ 30 p.p. > 25 p.p. threshold). A resposta será escalada mesmo com o número correto.",
     },
   },
 
   {
     id: 10,
-    slug: "hands-on-extra",
-    title: "10 · Desafio: carteira ativa",
-    subtitle: "Saldo em aberto ≠ principal contratado.",
+    slug: "llm-as-judge",
+    title: "10 · LLM-as-judge ancorado em ontologia",
+    subtitle: "Judge de vibe-check vs. judge de axioma. A diferença importa.",
     body: `
-**O desafio final.** Qual a carteira total ativa? Parece simples — some os
-contratos. Mas *qual* número?
+**Dois tipos de judge.** Um "vibe-check" avalia fluência e plausibilidade:
+"a resposta parece certa?". Um judge ancorado em ontologia avalia uma coisa
+específica: a resposta numérica é *consistente* com o axioma declarado aplicado
+sobre as instâncias listadas?
 
-- **Naive:** soma o \`principal\` bruto dos contratos, ignora amortizações e
-  PAID_OFF. Erro sistemático.
-- **Semântico:** aplica \`AX-EXPOSURE\` (outstanding_principal de contratos
-  ACTIVE ou RENEGOTIATED) → resultado correto.
+O \`mcp-judge\` desta demo implementa o segundo tipo.
 
-Este cenário sintetiza todas as lições anteriores:
+**Três classes de veredicto:**
+- **\`consistent\`** — refazendo o cálculo com o axioma sobre as instâncias,
+  o resultado bate dentro de tolerância de arredondamento.
+- **\`inconsistent\`** — refazendo, diverge: cálculo errado, definição diferente
+  ou instâncias indevidas.
+- **\`insufficient_evidence\`** — impossível verificar (axioma mal definido,
+  instâncias ausentes). Use com parcimônia — é o "não sei" do judge.
 
-1. *Ontologia*: "carteira ativa" tem definição precisa (AX-EXPOSURE).
-2. *Desambiguação*: "carteira" resolve para \`Metric:PortfolioSize\`.
-3. *Métricas determinísticas*: a view \`v_contract_outstanding\` calcula o
-   saldo real.
-4. *Eval*: a diferença entre naive e semântico é comprovável com ground truth.
+**Como está implementado.** Veja \`mcp-servers/judge-mcp/server.py\`. O system
+prompt proíbe vibe-check explicitamente: *"Avalie uma única coisa: a resposta
+numérica é consistente com o axioma?"*. O parser do output é tolerante (aceita
+fences markdown, texto extra) com fallback seguro para \`insufficient_evidence\`.
 
-O erro do naive não é aleatório — é *sistemático e previsível*, produto de
-não ter a definição correta. E em crédito, errar a carteira ativa por milhões
-tem consequências reais.
+Em modo MOCK (sem chave Azure), o judge retorna \`consistent\` deterministicamente
+— não interfere no fluxo; o killswitch ainda pode disparar pelos outros gatilhos.
+
+**O cenário S13 é o caminho feliz:** pergunta sobre NPL Ratio (métrica que existe,
+axioma claro, instâncias coerentes). Judge aprova, killswitch passivo.
 `,
     exercise: {
-      title: "Pratique: carteira total ativa",
-      question: "Qual a carteira total ativa?",
-      scenario_id: "S10",
+      title: "Pratique: caminho feliz com judge",
+      question: "Qual o NPL Ratio da carteira?",
+      scenario_id: "S13",
       expectation_pt:
-        "Naive retorna ~R$ 6,2M (soma bruta). Semântico aplica AX-EXPOSURE e retorna R$ 5.163.690,00 (saldo real em aberto). Diferença de ~R$ 1M — material para qualquer análise de crédito.",
+        "Judge retorna consistent (cálculo AX-NPL-RATIO verificável). Killswitch passivo. Badges: Calcular ✓ / Julgar consistent / Parar passivo. Hash visível e copiável.",
+    },
+  },
+
+  {
+    id: 11,
+    slug: "killswitch",
+    title: "11 · Killswitch — o freio do sistema",
+    subtitle: "Três gatilhos em OR. O agente que sabe quando parar.",
+    body: `
+**Design fundamental.** O killswitch não é o agente tomando uma decisão — é o
+*sistema de orquestração* aplicando regras externas ao agente. O agente pode
+fazer tudo certo e o killswitch ainda assim disparar.
+
+Três gatilhos independentes em OR (qualquer um é suficiente para escalar):
+
+**1. RAGAS abaixo do piso** (default 0,70)
+O eval automático desconfia. Em compliance crítico, suba para 0,85.
+
+**2. Judge não-consistent**
+Segunda voz semântica discorda — \`inconsistent\` ou \`insufficient_evidence\`.
+Uma segunda opinião independente sobre o mesmo cálculo.
+
+**3. Variância das instâncias acima do teto** (default 25 p.p.)
+Os contratos individuais discordam entre si. O número médio pode estar certo,
+mas a dispersão indica que a média esconde heterogeneidade relevante.
+*Este é o gatilho do S15 — o mais importante pedagogicamente.*
+
+**Por que OR e não AND?** Redes de proteção sobrepostas. Single point of
+failure no killswitch é mais perigoso do que falsos positivos. Em produção,
+tune os thresholds — não remova gatilhos.
+
+**Implementação.** Veja \`gateway/app/governance/killswitch.py\` — lógica pura,
+sem LLM, testável. Os testes em \`gateway/tests/governance/test_killswitch.py\`
+cobrem cada gatilho isolado e combinações.
+
+**O ponto do S15:** o agente calcula corretamente (judge consistent, RAGAS alto),
+mas os contratos KV têm spreads de 1 a 80 p.p. (std dev ≈ 30 p.p. > 25 p.p.).
+O killswitch para — não porque o agente errou, mas porque o sistema reconhece
+que entregar uma média sobre uma carteira tão dispersa sem aviso é irresponsável.
+`,
+    exercise: {
+      title: "Pratique: S15 — o freio do sistema",
+      question: "Qual o spread médio na carteira volátil?",
+      scenario_id: "S15",
+      expectation_pt:
+        "Badges: Calcular ✓ / Julgar consistent / Parar armed. Caixa âmbar substitui a resposta. Trigger high_instance_variance listado. Hash visível. O agente calculou certo — o sistema parou mesmo assim.",
+    },
+  },
+
+  {
+    id: 12,
+    slug: "trail-auditavel",
+    title: "12 · Trail auditável como subproduto",
+    subtitle: "O hash de reprodutibilidade: a métrica que um auditor verifica em segundos.",
+    body: `
+**A propriedade central.** Dois runs do mesmo cálculo determinístico sobre
+os mesmos dados produzem o **mesmo hash** apesar de timestamps diferentes.
+Drift no hash entre runs = drift real (ontologia mudou, regra mudou,
+contratos mudaram). É a métrica que um auditor verifica em segundos.
+
+**Como o hash é calculado.** Veja \`gateway/app/governance/trail.py\`:
+
+\`\`\`python
+def _canonical(self) -> dict:
+    return {
+        "question": self.question,
+        "steps": [
+            {"name": s.name, "inputs": s.inputs, "outputs": s.outputs}
+            for s in self.steps
+        ],
+    }
+
+def reproducibility_hash(self) -> str:
+    canonical_json = json.dumps(
+        self._canonical(), sort_keys=True, ensure_ascii=False
+    )
+    return hashlib.sha256(canonical_json.encode()).hexdigest()
+\`\`\`
+
+Timestamps, request_id e durations são **excluídos** do canonical. Eles variam
+entre runs; não fazem parte do conteúdo auditável.
+
+**O trail acumula 4 steps** no pipeline governado:
+\`calculate → judge → killswitch → respond/escalate\`
+
+Cada step tem inputs, outputs e o próprio hash reflete todos eles. Se qualquer
+axioma, instância ou veredicto mudar, o hash muda.
+
+**Uso em produção.** Armazene o hash junto à resposta entregue. Para re-auditoria:
+re-execute o pipeline com os mesmos dados → compare hashes. Match = reprodutível.
+Mismatch = investigar o que mudou entre as execuções.
+
+*"O agente que entrega valor em ambiente regulado é o que sabe quando não entregar."*
+`,
+    exercise: {
+      title: "Pratique: reprodutibilidade do hash",
+      question: "Qual o NPL Ratio da carteira?",
+      scenario_id: "S13",
+      expectation_pt:
+        "Execute S13 duas vezes seguidas. Copie o hash das duas execuções e compare. Devem ser idênticos — mesmo cálculo determinístico, mesmo axioma, mesmas instâncias. Isso é o que o auditor verifica.",
     },
   },
 ];

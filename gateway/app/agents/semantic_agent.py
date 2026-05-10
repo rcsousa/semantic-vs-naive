@@ -94,6 +94,9 @@ DEFAULT_TERMS = {
     "ltv menor": "AX-MORTGAGE-LTV-SAFE",
     "ltv inferior": "AX-MORTGAGE-LTV-SAFE",
     "imobiliário": "AX-MORTGAGE-LTV-SAFE",
+    # Módulo 2 — Governança
+    "volátil": "Metric:SpreadVolatil",
+    "carteira volátil": "Metric:SpreadVolatil",
 }
 
 CUSTOMER_RE = re.compile(r"\bC\d{3}\b", re.IGNORECASE)
@@ -190,10 +193,11 @@ def _format_answer(question: str, metric_id: str, rows: list[dict], customer_fil
     if metric_id == "AX-NPL-RATIO":
         r = rows[0]
         return f"Aplicando AX-NPL-RATIO, NPL Ratio = {float(r['npl_ratio']):.4%} (NPL R$ {float(r['npl_exposure']):,.2f} / Carteira R$ {float(r['total_exposure']):,.2f})."
-    if metric_id == "Metric:Spread":
+    if metric_id in ("Metric:Spread", "Metric:SpreadVolatil"):
         spreads = [float(r["spread"]) for r in rows]
         avg = sum(spreads) / len(spreads)
-        return f"Aplicando Metric:Spread (taxa - CDI 10,5%), spread médio = {avg:.2%} sobre {len(spreads)} contratos vivos."
+        label = "carteira volátil" if metric_id == "Metric:SpreadVolatil" else "contratos vivos"
+        return f"Aplicando {metric_id} (taxa - CDI 10,5%), spread médio = {avg:.2%} sobre {len(spreads)} {label}."
     if metric_id == "Metric:PortfolioSize":
         v = float(rows[0].get("portfolio", 0))
         return f"Aplicando Metric:PortfolioSize, a carteira ativa é R$ {v:,.2f}."

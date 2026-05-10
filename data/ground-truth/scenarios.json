@@ -161,5 +161,51 @@
         "axioms_applied": ["AX-ACTIVE-CUSTOMER"]
       }
     }
+    ,
+    {
+      "id": "S13",
+      "category": "governance",
+      "difficulty": "easy",
+      "question": "Qual o NPL Ratio da carteira?",
+      "naive_trap": "N/A — este cenário testa o pipeline de governança, não o agente naive.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 0.001356,
+        "tolerance": 0.0005,
+        "deterministic_query": "SELECT npl_ratio FROM v_npl_ratio",
+        "axioms_applied": ["AX-NPL-RATIO", "AX-DEFAULT-90", "AX-EXPOSURE"]
+      },
+      "governance_notes": "Caminho feliz: judge=consistent, RAGAS alto, variância N/A (escalar único). Killswitch passivo. Badges verdes. Demonstra pipeline de governança funcionando sem interrupção."
+    },
+    {
+      "id": "S14",
+      "category": "governance",
+      "difficulty": "medium",
+      "question": "Qual o spread médio dos contratos vivos?",
+      "naive_trap": "N/A — este cenário testa o pipeline de governança, não o agente naive.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 0.15363,
+        "tolerance": 0.005,
+        "deterministic_query": "SELECT AVG(interest_rate_aa - 0.105) FROM credit_contract WHERE status='ACTIVE'",
+        "axioms_applied": ["Metric:Spread"]
+      },
+      "governance_notes": "Recap do S07 com governança ativa. Mesma resposta 15,36 p.p. Judge=consistent (cálculo correto). Killswitch passivo. Demonstra que adicionar governança não muda comportamento quando dados são consistentes."
+    },
+    {
+      "id": "S15",
+      "category": "governance",
+      "difficulty": "hard",
+      "question": "Qual o spread médio na carteira volátil?",
+      "naive_trap": "N/A — este cenário testa o pipeline de governança, não o agente naive.",
+      "ground_truth": {
+        "type": "scalar",
+        "expected": 0.335,
+        "tolerance": 0.005,
+        "deterministic_query": "SELECT AVG(interest_rate_aa - 0.105) FROM credit_contract WHERE id LIKE 'KV%'",
+        "axioms_applied": ["Metric:SpreadVolatil"]
+      },
+      "governance_notes": "Cenário jewel: agente calcula corretamente (judge=consistent, RAGAS alto), mas killswitch dispara exclusivamente pelo gatilho 3 (high_instance_variance). Spreads KV: 1, 5, 10, 40, 65, 80 p.p. → std dev ≈ 30.6 p.p. > 25 p.p. threshold. A resposta é ESCALADA mesmo com o número correto."
+    }
   ]
 }

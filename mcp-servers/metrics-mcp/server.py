@@ -117,6 +117,15 @@ METRIC_REGISTRY = {
             "ORDER BY k.id"
         ),
     },
+    # Módulo 2 — Governança: carteira volátil (contratos KV, status RENEGOTIATED)
+    "Metric:SpreadVolatil": {
+        "label": "Spread sobre CDI — carteira volátil (KV)",
+        "sql": (
+            "SELECT id AS contract_id, product, "
+            "(interest_rate_aa - 0.105)::numeric(8,5) AS spread "
+            "FROM credit_contract WHERE id LIKE 'KV%' ORDER BY id"
+        ),
+    },
 }
 
 server = MCPServer(name="metrics", version="1.0.0")

@@ -30,6 +30,7 @@ BACKENDS: dict[str, str] = {
     "kg":       os.environ.get("MCP_KG_URL",        "http://mcp-kg:8080"),
     "rag":      os.environ.get("MCP_RAG_URL",       "http://mcp-rag:8080"),
     "eval":     os.environ.get("MCP_EVAL_URL",      "http://mcp-eval:8080"),
+    "judge":    os.environ.get("MCP_JUDGE_URL",     "http://mcp-judge:8080"),
 }
 
 app = FastAPI(title="MCP Aggregator", version="1.0.0")

@@ -250,6 +250,25 @@ services:
   # ---------- MCP Gateway -----------------------------------------------
   # Ponto único de descoberta de tools. Agentes configuram apenas este endpoint.
 
+  mcp-judge:
+    build:
+      context: ./mcp-servers
+      dockerfile: judge-mcp/Dockerfile
+    container_name: sad_mcp_judge
+    <<: [*default-restart, *default-logging]
+    environment:
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      MCP_SERVER_NAME: judge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [agents]
+
   mcp-gateway:
     build:
       context: ./mcp-servers
@@ -263,6 +282,7 @@ services:
       MCP_KG_URL: http://mcp-kg:8080
       MCP_RAG_URL: http://mcp-rag:8080
       MCP_EVAL_URL: http://mcp-eval:8080
+      MCP_JUDGE_URL: http://mcp-judge:8080
     depends_on:
       mcp-kg: {condition: service_healthy}
       mcp-ontology: {condition: service_healthy}
@@ -270,6 +290,7 @@ services:
       mcp-disambiguation: {condition: service_healthy}
       mcp-eval: {condition: service_healthy}
       mcp-rag: {condition: service_healthy}
+      mcp-judge: {condition: service_healthy}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
       interval: 15s
