@@ -14,7 +14,14 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(gh pr create --title 'feat: governance module — judge + killswitch + trail \\(4 lessons + 3 scenarios\\)' --body ' *)"
+      "Bash(gh pr create --title 'feat: governance module — judge + killswitch + trail \\(4 lessons + 3 scenarios\\)' --body ' *)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s http://localhost:8002/api/mcp-catalog)",
+      "Bash(curl -s -X POST http://localhost:8002/api/mcp-catalog)",
+      "Bash(curl -s \"http://localhost:8000/api/mcp-catalog\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); [print\\(t['name']\\) for t in d.get\\('tools',[]\\)]\")",
+      "Bash(curl -s -X POST http://localhost:8002/api/mcp-catalog -H \"content-type: application/json\" -d '{}')",
+      "Bash(curl -s -X POST \"http://localhost:8000/api/inspect/metrics-test\")"
     ]
   }
 }
