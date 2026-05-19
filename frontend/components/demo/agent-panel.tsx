@@ -1,9 +1,12 @@
 "use client";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Workstrip } from "./workstrip";
+import { KnowledgeGraphPanel } from "./knowledge-graph-panel";
 import type { WorkstripEvent } from "@/lib/api";
-import { CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Network } from "lucide-react";
 import { cn, fmtMs } from "@/lib/utils";
 
 export function AgentPanel({
@@ -28,8 +31,10 @@ export function AgentPanel({
 
   const isSem = variant === "semantic";
   const cardBorder = isSem ? "border-emerald-500/40" : "border-blue-500/40";
+  const [showGraph, setShowGraph] = useState(false);
 
   return (
+    <>
     <Card className={cn("overflow-hidden", cardBorder)}>
       <CardHeader className="bg-muted/40">
         <div className="flex items-center justify-between">
@@ -41,6 +46,17 @@ export function AgentPanel({
             <CardDescription>{description}</CardDescription>
           </div>
           <div className="flex items-center gap-2 text-xs">
+            {isSem && (
+              <Button
+                variant={showGraph ? "secondary" : "ghost"}
+                size="sm"
+                onClick={() => setShowGraph(p => !p)}
+                className="h-6 gap-1.5 px-2 text-[11px]"
+              >
+                <Network className="h-3 w-3" />
+                Grafo
+              </Button>
+            )}
             <Badge variant="outline">{toolCalls} tool calls</Badge>
             <Badge variant="outline">{fmtMs(totalMs)}</Badge>
           </div>
@@ -61,6 +77,10 @@ export function AgentPanel({
         <Workstrip title="Fluxo de execução" events={events} agentColor={isSem ? "green" : "blue"} />
       </CardContent>
     </Card>
+    {isSem && showGraph && (
+      <KnowledgeGraphPanel events={events} onClose={() => setShowGraph(false)} />
+    )}
+    </>
   );
 }
 
