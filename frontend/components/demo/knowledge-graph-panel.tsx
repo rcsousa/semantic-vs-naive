@@ -84,7 +84,17 @@ function lightHex(hex: string, f: number): string {
 
 // ── Event → entity mapping ────────────────────────────────────────────────────
 
-const VALID_ENTITIES = new Set(["Customer","CreditContract","Payment","Account","Collateral"]);
+const VALID_ENTITIES   = new Set(["Customer","CreditContract","Payment","Account","Collateral"]);
+const INSTANCE_TYPES  = VALID_ENTITIES; // same set, semantic alias
+
+// Maps Cypher node labels to the hub node IDs used in the graph
+const TYPE_TO_HUB: Record<string, string> = {
+  Customer:       "class:Customer",
+  Account:        "class:Account",
+  CreditContract: "class:CreditContract",
+  Payment:        "class:Payment",
+  Collateral:     "class:Collateral",
+};
 
 function parseCypherLabels(cypher: string): string[] {
   return [...new Set(
@@ -95,34 +105,41 @@ function parseCypherLabels(cypher: string): string[] {
 function entitiesFromEvent(ev: WorkstripEvent): string[] {
   if (ev.type === "tool_call") {
     const t = ev.label;
-    if (t.startsWith("disambig__")) return ["Customer"];
+    // Use hub IDs (class:*) so they match actual node IDs in the graph
+    if (t.startsWith("disambig__")) return ["class:Customer"];
     if (t.startsWith("ontology__")) {
       const id: string = ev.detail?.args?.axiom_id ?? ev.detail?.args?.id ?? "";
-      const types = id.includes("LTV")||id.includes("MORTGAGE") ? ["CreditContract","Collateral"]
-                  : id.includes("ACTIVE")||id.includes("INACTIVE") ? ["Customer","Account"]
-                  : ["Customer"];
-      return id ? [id, ...types] : types;
+      const hubs = id.includes("LTV")||id.includes("MORTGAGE")
+        ? ["class:CreditContract","class:Collateral"]
+        : id.includes("ACTIVE")||id.includes("INACTIVE")
+        ? ["class:Customer","class:Account"]
+        : ["class:Customer"];
+      return id ? [id, ...hubs] : hubs;
     }
     if (t.startsWith("metrics__")) {
       const id: string = ev.detail?.args?.id ?? ev.detail?.args?.axiom_id ?? "";
-      return [id, "Customer"].filter(Boolean);
+      return [id, "class:Customer"].filter(Boolean);
     }
     if (t.startsWith("kg__")) {
       const cypher: string = ev.detail?.args?.cypher ?? "";
       const labels = parseCypherLabels(cypher);
-      return labels.length > 0 ? labels : ["Customer","CreditContract"];
+      const hubs = labels.length > 0
+        ? labels.map(l => TYPE_TO_HUB[l] ?? l)
+        : ["class:Customer","class:CreditContract"];
+      return hubs;
     }
   }
   if (ev.type === "tool_result") {
     const t: string = ev.detail?.tool ?? "";
     if (t.startsWith("kg__") || t.startsWith("metrics__")) {
       const rows: Record<string,unknown>[] = ev.detail?.output?.rows ?? [];
-      const e = new Set<string>(["Customer"]);
+      const e = new Set<string>(["class:Customer"]);
       for (const row of rows) {
-        if ("contract_id"   in row) e.add("CreditContract");
-        if ("days_past_due" in row || "days_past_due_max" in row) e.add("Payment");
-        if ("ltv"           in row || "appraised_value"   in row) e.add("Collateral");
-        if ("account_id"    in row) e.add("Account");
+        if ("contract_id"   in row) e.add("class:CreditContract");
+        if ("days_past_due" in row || "days_past_due_max" in row) e.add("class:Payment");
+        if ("ltv"           in row || "appraised_value"   in row) e.add("class:Collateral");
+        if ("account_id"    in row) e.add("class:Account");
+        // Specific instance IDs (C002, K001, etc.) match directly
         if (row.customer_id)  e.add(String(row.customer_id));
         if (row.contract_id)  e.add(String(row.contract_id));
       }
@@ -327,25 +344,34 @@ export function KnowledgeGraphPanel({
 
   // ── ForceGraph3D callbacks ────────────────────────────────────────────────
 
-  // Focused mode: hide idle nodes/links while any node is active
+  // Resolve effective highlight for a node — direct ID or via hub class
+  const nodeHl = useCallback((id: string, nodeType: string): Highlight => {
+    return hlMapRef.current[id]
+        ?? (INSTANCE_TYPES.has(nodeType) ? hlMapRef.current[`class:${nodeType}`] : undefined)
+        ?? "idle";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hlMap]);
+
+  // Focused mode: hide nodes with no highlight (direct or hub-propagated)
   const nodeVisibility = useCallback((node: any) => {
     if (showAll || !hasActiveRef.current) return true;
-    return (hlMapRef.current[node.id] ?? "idle") !== "idle";
-  }, [showAll, hlMap]);
+    return nodeHl(node.id, node.nodeType) !== "idle";
+  }, [showAll, hlMap, nodeHl]);
 
   const linkVisibility = useCallback((link: any) => {
     if (showAll || !hasActiveRef.current) return true;
-    const s = (link.source as any)?.id ?? link.source;
-    const t = (link.target as any)?.id ?? link.target;
-    return (hlMapRef.current[s] ?? "idle") !== "idle"
-        && (hlMapRef.current[t] ?? "idle") !== "idle";
-  }, [showAll, hlMap]);
+    const src = link.source as any;
+    const tgt = link.target as any;
+    const sLit = nodeHl(src?.id ?? src, src?.nodeType ?? "") !== "idle";
+    const tLit = nodeHl(tgt?.id ?? tgt, tgt?.nodeType ?? "") !== "idle";
+    return sLit && tLit;
+  }, [showAll, hlMap, nodeHl]);
 
   // Labels: appear only on lit nodes (any type)
   const nodeThreeObject = useCallback((node: any) => {
     const ST = spriteTextRef.current;
     if (!ST) return null;
-    const hl = hlMapRef.current[node.id] ?? "idle";
+    const hl = nodeHl(node.id, node.nodeType);
     if (hl === "idle") return null;
 
     const T  = makeTheme(isLightRef.current);
@@ -362,50 +388,50 @@ export function KnowledgeGraphPanel({
     const sphereR = Math.cbrt(NODE_SIZES[node.nodeType] ?? 2) * 4;
     sprite.position.set(0, sphereR + sprite.textHeight + 2, 0);
     return sprite;
-  }, [hlMap, spriteReady, isLight]);
+  }, [hlMap, spriteReady, isLight, nodeHl]);
 
-  // Node sphere color
+  // Node colour — hub-propagated instances get mid-brightness
   const getNodeColor = useCallback((node: any) => {
-    const hl   = hlMapRef.current[node.id] ?? "idle";
+    const hl   = nodeHl(node.id, node.nodeType);
     const base = NODE_COLORS[node.nodeType] ?? "#64748b";
-    if (hl === "querying") return isLightRef.current ? dimHex(base, 0.7)  : "#ffffff";
-    if (hl === "found"   ) return base;
-    if (hl === "visited" ) return base;
-    return isLightRef.current ? lightHex(base, 0.65) : dimHex(base, 0.38);
-  }, [hlMap, isLight]);
+    if (hl === "querying") return isLightRef.current ? dimHex(base, 0.6) : "#ffffff";
+    if (hl === "found" || hl === "visited") return base;
+    // Visible through hub propagation only → slightly dimmed
+    return isLightRef.current ? lightHex(base, 0.45) : dimHex(base, 0.55);
+  }, [hlMap, isLight, nodeHl]);
 
   const getNodeVal = useCallback((node: any) => NODE_SIZES[node.nodeType as string] ?? 2, []);
 
-  // Link color (active = full, idle = dimmed)
+  // Link colour — uses hub-propagated state for both endpoints
   const getLinkColor = useCallback((link: any) => {
-    const s  = (link.source as any)?.id ?? link.source;
-    const t  = (link.target as any)?.id ?? link.target;
-    const sh = hlMapRef.current[s] ?? "idle";
-    const th = hlMapRef.current[t] ?? "idle";
+    const src  = link.source as any;
+    const tgt  = link.target as any;
+    const sh   = nodeHl(src?.id ?? src, src?.nodeType ?? "");
+    const th   = nodeHl(tgt?.id ?? tgt, tgt?.nodeType ?? "");
     const base = LINK_COLORS[link.linkType as string] ?? "#94a3b8";
     if (sh !== "idle" || th !== "idle") return base;
     return isLightRef.current ? lightHex(base, 0.55) : dimHex(base, 0.45);
-  }, [hlMap, isLight]);
+  }, [hlMap, isLight, nodeHl]);
 
   const getLinkWidth = useCallback((link: any) => {
-    const s  = (link.source as any)?.id ?? link.source;
-    const t  = (link.target as any)?.id ?? link.target;
-    const sh = hlMapRef.current[s] ?? "idle";
-    const th = hlMapRef.current[t] ?? "idle";
+    const src  = link.source as any;
+    const tgt  = link.target as any;
+    const sh   = nodeHl(src?.id ?? src, src?.nodeType ?? "");
+    const th   = nodeHl(tgt?.id ?? tgt, tgt?.nodeType ?? "");
     const base = LINK_WIDTHS[link.linkType as string] ?? 0.8;
     return (sh !== "idle" || th !== "idle") ? base * 1.5 : base;
-  }, [hlMap]);
+  }, [hlMap, nodeHl]);
 
-  // Particles flow along active edges
+  // Particles flow along edges adjacent to querying/found nodes
   const getParticles = useCallback((link: any) => {
-    const s  = (link.source as any)?.id ?? link.source;
-    const t  = (link.target as any)?.id ?? link.target;
-    const sh = hlMapRef.current[s] ?? "idle";
-    const th = hlMapRef.current[t] ?? "idle";
+    const src = link.source as any;
+    const tgt = link.target as any;
+    const sh  = nodeHl(src?.id ?? src, src?.nodeType ?? "");
+    const th  = nodeHl(tgt?.id ?? tgt, tgt?.nodeType ?? "");
     if (sh === "querying" || th === "querying") return 4;
     if (sh === "found"    || th === "found")    return 2;
     return 0;
-  }, [hlMap]);
+  }, [hlMap, nodeHl]);
 
   const getNodeLabel = useCallback((node: any) =>
     `[${node.nodeType}] ${node.label ?? node.id}${node.rule_pt ? `\n\n${node.rule_pt}` : ""}`, []);
@@ -503,7 +529,7 @@ export function KnowledgeGraphPanel({
           nodeThreeObjectExtend
           linkColor={getLinkColor}
           linkWidth={getLinkWidth}
-          linkOpacity={0.75}
+          linkOpacity={isLight ? 0.95 : 0.75}
           linkCurvature={0.1}
           linkDirectionalArrowLength={3.5}
           linkDirectionalArrowRelPos={0.85}
