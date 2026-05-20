@@ -30,7 +30,13 @@
       "Bash(npx tsc *)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(m\\) for m in d[0]['Mounts']]\")",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d[0].get\\('Mounts',[]\\), indent=2\\)\\)\")",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); ports=d[0]['NetworkSettings']['Ports']; print\\(ports\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); ports=d[0]['NetworkSettings']['Ports']; print\\(ports\\)\")",
+      "Bash(curl -s http://localhost:8000/api/kg-graph)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'nodes: {len\\(d[\\\\\"nodes\\\\\"]\\)}, links: {len\\(d[\\\\\"links\\\\\"]\\)}'\\); types={}; [types.update\\({n['nodeType']: types.get\\(n['nodeType'],0\\)+1}\\) for n in d['nodes']]; print\\('por tipo:', json.dumps\\(types, indent=2\\)\\)\")",
+      "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8000/api/kg-graph)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d[0]['NetworkSettings']['Ports']\\)\")",
+      "Bash(curl -s http://localhost:8002/api/kg-graph)",
+      "Bash(curl -v http://localhost:8002/api/kg-graph)"
     ]
   }
 }
